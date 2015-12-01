@@ -1,0 +1,125 @@
+#!/bin/sh
+# 
+# srvc 
+# By Jacob Hartman
+#
+# Make systemd service management more... useful
+#
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+input_service=$1
+action=$2
+current_time=$(date '+%F %T')
+
+StartService () {
+	service=$1
+	IsRunning $service
+	if [ "$?" -eq 0 ]; then
+	
+		echo -n -e "Starting $service\t\t\t"
+
+		systemctl start $service 2> /dev/null
+		
+		if [ "$?" -eq 0 ]; then
+			
+			
+			echo -e "[${GREEN} OK ${NC}]"
+			#~ journalctl --full --no-pager -u $service -b --since="$current_time" | grep -v 'Logs begin ' | cut -d: -f 4 | grep "Started"
+			return 0
+		elif [ "$?" -eq 1 ]; then
+			echo -e "[${RED} Failed ${NC}]"
+			return 1
+		else
+			echo "Service $service does not exist"		
+			return 2
+		fi
+	else
+		echo "Service $service is already running"	
+		return 3
+	fi
+}
+
+StopService () {
+        service=$1
+	IsRunning $service
+        if [ "$?" -eq 1 ]; then
+				echo -n -e "Stopping $service\t\t\t"
+                systemctl stop $service 2> /dev/null
+                if [ "$?" -eq 0 ]; then
+                    #~ journalctl --full --no-pager -u $service -b --since="$current_time" | grep -v 'Logs begin ' | cut -d: -f 4 | grep "Stopped"
+                    echo -e "[${GREEN} OK ${NC}]"
+                	return 0
+                elif [ "$?" -eq 5 ]; then
+					echo "Service $service does not exist"
+					return 2
+                else
+					echo -e "[${RED} Failed ${NC}]"
+					return 1
+                fi
+        else
+                echo "Service $service is not running"
+				return 3
+        fi
+}
+
+ServiceStatus () {
+        service=$1
+        systemctl status $service 2> /dev/null | grep 'Loaded:\|Active:\|PID' --color=never
+        if [ "$?" -eq 0 ]; then
+				return 0
+        else
+                echo "Service $service does not exist"
+               	return 2
+	fi
+}
+
+IsRunning () {
+test=$(systemctl status $1 | grep 'active (running)')
+
+if [ "$test" = "" ]; then
+	return 0
+else
+	return 1
+fi
+}
+
+
+if [ "$input_service" = "--boot-status" ]; then
+	systemctl --no-legend --no-pager list-unit-files --type=service |  sed "s_\(^.*\)\.service_\1_" | grep -v "static"
+elif [ "$input_service" = "--list-state" ]; then
+	systemctl --no-legend --no-pager list-units --type=service	|  sed "s_\(^.*\)\.service_\1_"
+elif [ "$input_service" = "--list" ]; then
+	systemctl --no-legend --no-pager list-units --type=service	|  sed "s_\(^.*\)\.service_\1_" | cut -d" " -f 1
+elif [ "$action" = "start" ]; then
+	StartService $input_service
+elif [ "$action" = "stop" ]; then
+	StopService $input_service
+elif [ "$action" = "restart" ]; then
+	StopService $input_service
+	if [ "$?" -eq 0 ]; then
+		StartService $input_service
+	fi
+elif [ "$action" = "status" ]; then
+	ServiceStatus $input_service
+elif [ "$action" = "logs" ]; then
+	journalctl --full --no-pager -u $input_service -b
+else
+
+	if [ "$input_service" != "" ]; then
+		echo "Invalid action: '${input_service}'"
+	fi
+
+	echo "
+srvc: By Jacob Hartman
+Improved systemd service management
+
+Usage:  
+srvc SERVICE_NAME  [ start | stop | restart | logs | status ]
+srvc [ --boot-status | --list-state | --list ]
+			
+	"
+fi
+
